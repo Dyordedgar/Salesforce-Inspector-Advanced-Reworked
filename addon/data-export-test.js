@@ -641,7 +641,40 @@ export async function dataExportTest(test) {
 
   assertEquals("SELECT Id, name, foo, bar,\n  tst\nFROM Account", vm.formatQuery("select Id,name,foo,bar,tst from Account"));
   assertEquals("SELECT Id,\n  (\n    SELECT Id\n    FROM contacts\n  ),\n  (\n    SELECT Id\n    FROM cases\n  )\nFROM Account", vm.formatQuery("select Id, (select Id from contacts), (select Id from cases) from Account"));
-  assertEquals("SELECT Id\nFROM Account\nWHERE test = 1\nAND toto like '%A%'", vm.formatQuery("select Id from Account where test=1 and toto like '%A%'"));
+  assertEquals("SELECT Id\nFROM Account\nWHERE test = 1\nAND toto LIKE '%A%'", vm.formatQuery("select Id from Account where test=1 and toto like '%A%'"));
+
+  // formatQuery correctness pass: whole-token forms must survive intact (no truncation, no stray spaces).
+  assertEquals("SELECT Id\nFROM Account\nWHERE CreatedDate > 2024-01-01", vm.formatQuery("select Id from Account where CreatedDate > 2024-01-01"));
+  assertEquals("SELECT Id\nFROM Account\nWHERE CreatedDate > 2024-01-01T00:00:00Z", vm.formatQuery("select Id from Account where CreatedDate > 2024-01-01T00:00:00Z"));
+  assertEquals("SELECT Id\nFROM Account\nWHERE Amount > -5", vm.formatQuery("select Id from Account where Amount > -5"));
+  assertEquals("SELECT Id\nFROM Account\nWHERE CreatedDate = LAST_N_DAYS:30", vm.formatQuery("select Id from Account where CreatedDate = LAST_N_DAYS:30"));
+  assertEquals("SELECT Id\nFROM Account\nWHERE CreatedDate = N_DAYS_AGO:7", vm.formatQuery("select Id from Account where CreatedDate = N_DAYS_AGO:7"));
+  // $1 list-parameter placeholder must stay exactly "$1" (never "$ 1"), so query.replace("$1", ...) keeps working.
+  assertEquals("SELECT Id\nFROM Account\nWHERE Id IN ($1)", vm.formatQuery("select Id from Account where Id in ($1)"));
+  // Comments are preserved on their own line and the rest of the query is never dropped.
+  assertEquals("SELECT Id,\n  // c\n  Name\nFROM Account", vm.formatQuery("select Id, // c\nName from Account"));
+  assertEquals("SELECT Id,\n  /* c */\n  Name\nFROM Account", vm.formatQuery("select Id, /* c */ Name from Account"));
+  // Unterminated block comment: no hang, no truncation of preceding tokens.
+  assertEquals("SELECT Id\nFROM Account\n/* oops\n", vm.formatQuery("select Id from Account /* oops"));
+  // SOSL: leading blank line is trimmed.
+  assertEquals("FIND {test}\nRETURNING Account", vm.formatQuery("find {test} returning Account"));
+  // ORDER BY / GROUP BY / HAVING keyword casing.
+  assertEquals("SELECT Id\nFROM Account\nORDER BY Name DESC NULLS LAST", vm.formatQuery("select Id from Account order by Name desc nulls last"));
+  assertEquals("SELECT count(Id)\nFROM Account\nGROUP BY X\nHAVING count(Id) > 1", vm.formatQuery("select count(Id) from Account group by X having count(Id) > 1"));
+  // IN-lists and logical grouping stay on one line, comma-space separated.
+  assertEquals("SELECT Id\nFROM Account\nWHERE Id IN ('a', 'b', 'c')", vm.formatQuery("select Id from Account where Id in ('a','b','c')"));
+  assertEquals("SELECT Id\nFROM Account\nWHERE (x = 1 OR y = 2)", vm.formatQuery("select Id from Account where (x = 1 or y = 2)"));
+  // Function call with alias, and empty function: no space inserted before "(".
+  assertEquals("SELECT count(Id) total\nFROM Account", vm.formatQuery("select count(Id) total from Account"));
+  assertEquals("SELECT count()\nFROM Account", vm.formatQuery("select count() from Account"));
+  // Subquery with an inner WHERE (regression guard for the exploded-paren branch).
+  assertEquals("SELECT Id,\n  (\n    SELECT Id\n    FROM Contacts\n    WHERE IsDeleted = false\n  )\nFROM Account", vm.formatQuery("select Id, (select Id from Contacts where IsDeleted = false) from Account"));
+  // Idempotency: formatting an already-formatted query changes nothing.
+  let formattedOnce = vm.formatQuery("select Id, name, foo, bar, tst from Account where Id in ('a','b','c')");
+  assertEquals(formattedOnce, vm.formatQuery(formattedOnce));
+  // Empty / whitespace-only input formats to an empty string (no truncation crash).
+  assertEquals("", vm.formatQuery(""));
+  assertEquals("", vm.formatQuery("   "));
 
   // Autocomplet find object name
   setQuery("find {test} returning Account", "", "");
