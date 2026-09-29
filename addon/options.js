@@ -88,6 +88,7 @@ class OptionsTabSelector extends React.Component {
           {option: Option, props: {type: "toggle", title: "Enable generation of favicon color automatically", key: "generateCustomFavicon", default: true}},
           {option: Option, props: {type: "toggle", title: "Enable custom favicon for Salesforce", key: "customFaviconSF", default: true}},
           {option: AllHostsColorPickerOption, props: {currentHost: this.sfHost}},
+          {option: AllHostsBannerTextOption, props: {currentHost: this.sfHost}},
           {option: CustomLinkOption, props: {title: "Custom links (org specific)", key: this.sfHost + "_orgLinks"}},
           {option: Option, props: {type: "number", title: "Number of flow version to keep", key: "clearOlderFlowsKeep", placeholder: "5 by default", default: 5}},
           {option: Option, props: {type: "number", title: "Height of popup menu", key: "popupHeight", placeholder: "600 by default", default: 600}},
@@ -677,6 +678,121 @@ class AllHostsColorPickerOption extends React.Component {
               title: "Delete custom favicon",
               className: "slds-button slds-button_destructive"
             }, "Delete")
+          )
+          );
+        })
+      )
+    );
+  }
+}
+
+class AllHostsBannerTextOption extends React.Component {
+  constructor(props) {
+    super(props);
+    this.currentHost = props.currentHost;
+    this.getAllHosts = this.getAllHosts.bind(this);
+    this.onBannerTextChange = this.onBannerTextChange.bind(this);
+    this.deleteBannerText = this.deleteBannerText.bind(this);
+    this.state = {hosts: this.getAllHosts(), bannerTexts: this.getAllBannerTexts()};
+  }
+
+  getAllHosts() {
+    let hosts = new Set();
+    for (let i = 0; i < localStorage.length; i++) {
+      let key = localStorage.key(i);
+      if (key && key.endsWith("_customFavicon")) {
+        let host = key.replace("_customFavicon", "");
+        hosts.add(host);
+      }
+    }
+    if (this.currentHost) {
+      hosts.add(this.currentHost);
+    }
+    return Array.from(hosts).sort();
+  }
+
+  getAllBannerTexts() {
+    let texts = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      let key = localStorage.key(i);
+      if (key && key.endsWith("_bannerText")) {
+        let host = key.replace("_bannerText", "");
+        texts[host] = localStorage.getItem(key);
+      }
+    }
+    return texts;
+  }
+
+  onBannerTextChange(host, value) {
+    let bannerTexts = {...this.state.bannerTexts};
+    if (value) {
+      bannerTexts[host] = value;
+      localStorage.setItem(host + "_bannerText", value);
+    } else {
+      delete bannerTexts[host];
+      localStorage.removeItem(host + "_bannerText");
+    }
+    this.setState({bannerTexts});
+  }
+
+  deleteBannerText(host) {
+    localStorage.removeItem(host + "_bannerText");
+    let bannerTexts = {...this.state.bannerTexts};
+    delete bannerTexts[host];
+    this.setState({bannerTexts});
+  }
+
+  render() {
+    if (this.state.hosts.length === 0) {
+      return h("div", {className: "slds-grid slds-border_bottom slds-p-horizontal_small slds-p-vertical_xx-small"},
+        h("div", {className: "slds-col slds-size_4-of-12 text-align-middle"},
+          h("span", {}, "Org Banner Text")
+        ),
+        h("div", {className: "slds-col slds-size_8-of-12"},
+          h("span", {className: "slds-text-body_small slds-text-color_weak"}, "No orgs found. Configure a favicon color first.")
+        )
+      );
+    }
+
+    return h("div", {className: "slds-border_bottom slds-p-horizontal_small slds-p-vertical_xx-small"},
+      h("div", {className: "slds-grid slds-m-bottom_x-small"},
+        h("div", {className: "slds-col slds-size_4-of-12 text-align-middle"},
+          h("span", {}, "Org Banner Text")
+        ),
+        h("div", {className: "slds-col slds-size_8-of-12"},
+          h("span", {className: "slds-text-body_small slds-text-color_weak"}, "Banner uses the favicon color. Only shown when text is set.")
+        )
+      ),
+      h("div", {className: "slds-m-left_medium"},
+        this.state.hosts.map(host => {
+          let isCurrentHost = host === this.currentHost;
+          let bannerText = this.state.bannerTexts[host] || "";
+          return h("div", {
+            key: host + "_bannerText",
+            className: "slds-grid slds-border_bottom slds-p-vertical_xx-small" + (isCurrentHost ? " slds-theme_info" : "")
+          },
+          h("div", {className: "slds-col slds-size_4-of-12 text-align-middle"},
+            h("span", {
+              className: "slds-text-body_small" + (isCurrentHost ? " slds-text-color_default" : " slds-text-color_weak")
+            }, host + (isCurrentHost ? " (current)" : ""))
+          ),
+          h("div", {className: "slds-col slds-size_6-of-12"},
+            h("input", {
+              type: "text",
+              className: "slds-input",
+              style: {color: "black"},
+              placeholder: "e.g. PRODUCTION, DEV SANDBOX...",
+              value: bannerText,
+              onChange: (e) => this.onBannerTextChange(host, e.target.value)
+            })
+          ),
+          h("div", {className: "slds-col slds-size_2-of-12 text-align-middle"},
+            h("button", {
+              onClick: () => this.deleteBannerText(host),
+              title: "Clear banner text",
+              className: "slds-button slds-button_destructive",
+              disabled: !bannerText
+            }, "Clear")
           )
           );
         })
