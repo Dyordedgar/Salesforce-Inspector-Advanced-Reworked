@@ -14,6 +14,7 @@ export class Editor extends React.Component {
     this.processText = this.processText.bind(this);
     this.handleMouseUp = this.handleMouseUp.bind(this);
     this.onBlur = this.onBlur.bind(this);
+    this.autoResize = this.autoResize.bind(this);
     this.numberOfLines = 1;
     this.state = {scrolltop: 0, lineHeight: 0};
   }
@@ -82,6 +83,14 @@ export class Editor extends React.Component {
     }
     addEventListener("resize", resize);
     resize();
+    this.autoResize();
+  }
+
+  autoResize() {
+    let editorInput = this.refs.editor;
+    if (!editorInput) return;
+    editorInput.style.height = "auto";
+    editorInput.style.height = editorInput.scrollHeight + "px";
   }
 
   onScroll() {
@@ -102,6 +111,7 @@ export class Editor extends React.Component {
   handleChange(e) {
     let {model} = this.props;
     model.handleEditorChange(e.currentTarget.value, e.currentTarget.selectionStart, e.currentTarget.selectionEnd);
+    this.autoResize();
   }
   handlekeyDown(e) {
     // We do not want to perform Salesforce API calls for autocomplete on every keystroke, so we only perform these when the user pressed Ctrl+Space
@@ -152,7 +162,9 @@ export class Editor extends React.Component {
         }
         return;
       case "Enter":
-        if (model.displaySuggestion && model.activeSuggestion != -1) {
+        // Ctrl+Enter always runs the query (handled by the global keydown listener),
+        // so do not accept an autocomplete suggestion when Ctrl is held.
+        if (model.displaySuggestion && !e.ctrlKey) {
           e.preventDefault();
           model.selectSuggestion();
         }
@@ -163,42 +175,44 @@ export class Editor extends React.Component {
         model.hideSuggestion();
         return;
       case "Tab": {
-        //TODO option to select 2 spaces, 4 spaces or tab \t
-        let selectedText = value.substring(selectionStart, selectionEnd);
-        let mod = 0;
         e.preventDefault();
-        if (e.shiftKey) {
-          //unindent
-          let lineStart = value.substring(0, selectionStart + 1).lastIndexOf("\n") + 1;
-          if (value.substring(lineStart).startsWith(tabChar)) {
-            model.editor.setRangeText("", lineStart, lineStart + 2, "preserve");
-            mod -= tabChar.length;
-          }
-          let breakLineRegEx = /\n/gmi;
-          let breakLineMatch;
-          while ((breakLineMatch = breakLineRegEx.exec(selectedText)) !== null) {
-            lineStart = selectionStart + breakLineMatch.index + breakLineMatch[0].length;
+        if (model.displaySuggestion) {
+          model.selectSuggestion({singleResult: true});
+        } else {
+          //TODO option to select 2 spaces, 4 spaces or tab \t
+          let selectedText = value.substring(selectionStart, selectionEnd);
+          let mod = 0;
+          if (e.shiftKey) {
+            //unindent
+            let lineStart = value.substring(0, selectionStart + 1).lastIndexOf("\n") + 1;
             if (value.substring(lineStart).startsWith(tabChar)) {
-              model.editor.setRangeText("", lineStart + mod, lineStart + 2 + mod, "preserve");
+              model.editor.setRangeText("", lineStart, lineStart + 2, "preserve");
               mod -= tabChar.length;
             }
-          }
-        } else if (selectionStart !== selectionEnd) {
-          //indent
-          let lineStart = value.substring(0, selectionStart + 1).lastIndexOf("\n") + 1;
-          model.editor.setRangeText(tabChar, lineStart, lineStart, "preserve");
-          mod += tabChar.length;
-          let breakLineRegEx = /\n/gmi;
-          let breakLineMatch;
-          while ((breakLineMatch = breakLineRegEx.exec(selectedText)) !== null) {
-            lineStart = selectionStart + breakLineMatch.index + breakLineMatch[0].length;
-            model.editor.setRangeText(tabChar, lineStart + mod, lineStart + mod, "preserve");
+            let breakLineRegEx = /\n/gmi;
+            let breakLineMatch;
+            while ((breakLineMatch = breakLineRegEx.exec(selectedText)) !== null) {
+              lineStart = selectionStart + breakLineMatch.index + breakLineMatch[0].length;
+              if (value.substring(lineStart).startsWith(tabChar)) {
+                model.editor.setRangeText("", lineStart + mod, lineStart + 2 + mod, "preserve");
+                mod -= tabChar.length;
+              }
+            }
+          } else if (selectionStart !== selectionEnd) {
+            //indent
+            let lineStart = value.substring(0, selectionStart + 1).lastIndexOf("\n") + 1;
+            model.editor.setRangeText(tabChar, lineStart, lineStart, "preserve");
             mod += tabChar.length;
+            let breakLineRegEx = /\n/gmi;
+            let breakLineMatch;
+            while ((breakLineMatch = breakLineRegEx.exec(selectedText)) !== null) {
+              lineStart = selectionStart + breakLineMatch.index + breakLineMatch[0].length;
+              model.editor.setRangeText(tabChar, lineStart + mod, lineStart + mod, "preserve");
+              mod += tabChar.length;
+            }
+          } else {
+            model.editor.setRangeText(tabChar, selectionStart, selectionStart, "preserve");
           }
-        } else if (model.displaySuggestion && model.activeSuggestion) {
-          model.selectSuggestion();
-        } else {
-          model.editor.setRangeText(tabChar, selectionStart, selectionStart, "preserve");
         }
         break;
       }
@@ -295,6 +309,7 @@ export class Editor extends React.Component {
   }
 
   componentDidUpdate() {
+    this.autoResize();
     let {model} = this.props;
     let caretEle = model.editorMirror.getElementsByClassName("editor_caret")[0];
     if (caretEle) {
