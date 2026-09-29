@@ -1074,7 +1074,9 @@ class Model {
       }
       return;
     }
-    this.activeBatches += batchRows.length;
+    // SOAP path sends the whole batch in one call (decremented by 1 at completion),
+    // while the Bulk path creates one in-flight job per chunk (each decremented by 1 in its .finally()).
+    this.activeBatches += this.apiType == "Bulk" ? batchRows.length : 1;
     this.updateResult(this.importData.importTable);
 
     // When receiving invalid input, Salesforce will respond with HTTP status 500.
