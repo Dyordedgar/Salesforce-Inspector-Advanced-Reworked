@@ -37,6 +37,40 @@
   box-sizing: border-box;
 }
 
+.scrolltable-cell-inner {
+  position: relative;
+  height: 100%;
+  width: 100%;
+}
+
+.scrolltable-cell .inline-edit-pencil {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  display: none;
+  padding: 1px;
+  background-color: white;
+  text-decoration: none;
+}
+
+.scrolltable-cell:hover .inline-edit-pencil {
+  display: inline-block;
+}
+
+.scrolltable-cell .inline-edit-pencil .icon {
+  width: 0.85rem;
+  height: 0.85rem;
+  -webkit-mask-image: url(images/edit.svg);
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size: 0.85rem;
+  -webkit-mask-position: center;
+  background-color: #706E6B;
+}
+
+.scrolltable-cell .inline-edit-pencil:hover .icon {
+  background-color: #006dcc;
+}
+
 td.scrolltable-cell-diff {
   background-color: #009edc50;
 }
@@ -60,6 +94,7 @@ td.scrolltable-cell-diff {
 
 .pop-menu {
   position: absolute;
+  z-index: 10;
   padding: 7px 0;
   background: rgb(255, 255, 255);
   box-shadow: 0 2px 3px 0 rgba(0, 0, 0, 0.16);
@@ -180,6 +215,16 @@ td.scrolltable-cell-diff {
 }
 .scrolltable-cell textarea {
   width: auto;
+}
+.scrolltable-cell .edit-textarea {
+  box-sizing: border-box;
+  max-width: 600px;
+  max-height: 300px;
+  overflow: auto;
+  resize: both;
+  font-family: inherit;
+  line-height: 1.4;
+  vertical-align: top;
 }
 .suggestions {
   border: 1px solid #999;
