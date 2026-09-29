@@ -112,6 +112,7 @@ body {
 .editor_textarea {
   width: 100%;
   resize: vertical;
+  overflow: hidden;
   font-size: 0.9rem;
 }
 textarea {
