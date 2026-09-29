@@ -822,25 +822,42 @@ export class TableModel {
     }
     this.didUpdate();
   }
-  editCell(rowId, cellId) {
+  isCellEditable(rowId, cellId) {
+    if (!this.rows || !this.data || !this.header) {
+      return false;
+    }
     let row = this.rows[rowId];
+    if (!row) {
+      return false;
+    }
     let cell = row.cells[cellId];
-    //do not allow edit of id
-    if (this.header[cellId] && this.header[cellId].name && this.header[cellId].name.toLowerCase() == "Id") {
-      return;
+    if (!cell) {
+      return false;
     }
     // do not allow edit if no id column
-    if (!this.data.table[0].some(c => c == "Id")) {
-      return;
+    if (!this.data.table || !this.data.table[0] || !this.data.table[0].some(c => c == "Id")) {
+      return false;
+    }
+    //do not allow edit of id
+    if (this.header[cellId] && this.header[cellId].name && this.header[cellId].name.toLowerCase() == "id") {
+      return false;
     }
     //do not allow edit of object column
     if (cell.linkable && !this.isRecordId(cell.label)){
-      return;
+      return false;
     }
     // not sub record for moment
-    if (this.header[cell.id].name && this.header[cell.id].name.includes(".")){
+    if (this.header[cell.id] && this.header[cell.id].name && this.header[cell.id].name.includes(".")){
+      return false;
+    }
+    return true;
+  }
+  editCell(rowId, cellId) {
+    if (!this.isCellEditable(rowId, cellId)) {
       return;
     }
+    let row = this.rows[rowId];
+    let cell = row.cells[cellId];
     let tableRow = this.data.table[row.idx];
     let objectCell = tableRow && tableRow.length ? tableRow[0] : null;
     if (objectCell && objectCell.attributes && objectCell.attributes.type) {
@@ -1168,7 +1185,7 @@ export class TableModel {
       } else {
         cell.links.push({withIcon: true, href: cell.recordId, label: "Copy Id", className: "copy-id", action: "copy"});
       }
-      cell.links.push({withIcon: true, href: cell.recordId, label: "Edit", title: "Double click on cell to edit", className: "edit-record", action: "edit"});
+      cell.links.push({withIcon: true, href: cell.recordId, label: "Edit", title: "Edit this record", className: "edit-record", action: "edit"});
       editedCell.links = cell.links;
       self.didUpdate();
     }
@@ -1222,12 +1239,18 @@ class ScrollTableCell extends React.Component {
     this.onSuggestionClick = this.onSuggestionClick.bind(this);
     this.onKeyDown = this.onKeyDown.bind(this);
     this.onEditRecord = this.onEditRecord.bind(this);
+    this.autoSizeTextarea = this.autoSizeTextarea.bind(this);
+    this.focusTextarea = this.focusTextarea.bind(this);
+    this.hasFocused = false;
     this.state = {
       activeSuggestion: 0,
       showSuggestions: false
     };
   }
-  onTryEdit() {
+  onTryEdit(e) {
+    if (e) {
+      e.preventDefault();
+    }
     let {model} = this.props;
     model.editCell(this.row.id, this.cell.id);
   }
@@ -1237,7 +1260,38 @@ class ScrollTableCell extends React.Component {
     model.editRow(this.row.id);
   }
   componentDidMount() {
-
+    if (this.props.cell.isEditing) {
+      this.autoSizeTextarea();
+      this.focusTextarea();
+    }
+  }
+  componentDidUpdate() {
+    if (this.props.cell.isEditing) {
+      this.autoSizeTextarea();
+      this.focusTextarea();
+    } else {
+      this.hasFocused = false;
+    }
+  }
+  autoSizeTextarea() {
+    let textarea = this.refs.editTextarea;
+    if (!textarea) {
+      return;
+    }
+    // Grow the box to fit all of the text instead of showing a single clipped line.
+    textarea.style.height = "auto";
+    textarea.style.height = (textarea.scrollHeight + 2) + "px";
+  }
+  focusTextarea() {
+    // Put the cursor in the box once, when editing starts, so the user can type right away.
+    if (this.hasFocused) {
+      return;
+    }
+    let textarea = this.refs.editTextarea;
+    if (textarea) {
+      textarea.focus();
+      this.hasFocused = true;
+    }
   }
 
   abordJob(e){
@@ -1367,14 +1421,18 @@ class ScrollTableCell extends React.Component {
       cellStyle.backgroundColor = bgColor;
     }
     if (cell.isEditing){
-      cellStyle.height = (rowHeight + 10) + "px";
+      cellStyle.height = "auto";
+      cellStyle.verticalAlign = "top";
     }
     if (cell.isEditing){
       if (previousCell != null && previousCell.dataEditValue != cell.dataEditValue) {
         className += " scrolltable-cell-diff";
       }
+      let editLines = (cellDataEditValue || "").split("\n");
+      let longestEditLine = editLines.reduce((longest, line) => Math.max(longest, line.length), 0);
+      let editWidth = Math.min(Math.max(longestEditLine + 2, 24), 80);
       return h("td", {className, style: cellStyle},
-        h("textarea", {value: cellDataEditValue, style: {width: "100%", height: rowHeight + "px"}, onChange: this.onDataEditValueInput, onFocus: this.onFocus, onBlur: this.onBlur, onKeyDown: this.onKeyDown}),
+        h("textarea", {ref: "editTextarea", className: "edit-textarea", value: cellDataEditValue, style: {minWidth: colWidth + "px", width: editWidth + "ch"}, onChange: this.onDataEditValueInput, onFocus: this.onFocus, onBlur: this.onBlur, onKeyDown: this.onKeyDown}),
         h("a", {href: "about:blank", onClick: this.onCancelEdit, className: "undo-button"}, "\u21B6"),
         (showSuggestions && cell.filteredSuggestions && cell.filteredSuggestions.length)
           ? h("ul", {className: "suggestions"},
@@ -1391,7 +1449,10 @@ class ScrollTableCell extends React.Component {
         className += " scrolltable-cell-diff";
       }
       return h("td", {className, style: cellStyle},
-        cell.linkable ? h("a", {href: "about:blank", title: "Show all data", onClick: this.onClick, onDoubleClick: this.onTryEdit}, cellLabel) : h("div", {style: {height: "100%", width: "100%"}, onDoubleClick: this.onTryEdit}, cellLabel),
+        h("div", {className: "scrolltable-cell-inner"},
+          cell.linkable ? h("a", {href: "about:blank", title: "Show all data", onClick: this.onClick}, cellLabel) : h("div", {style: {height: "100%", width: "100%"}}, cellLabel),
+          model.isCellEditable(row.id, cell.id) ? h("a", {href: "about:blank", className: "inline-edit-pencil", title: "Edit", onClick: this.onTryEdit}, h("div", {className: "icon"})) : null
+        ),
         cell.showMenu ? h("div", {className: "pop-menu"},
           cell.links.map((l, idx) => {
             let arr = [];
