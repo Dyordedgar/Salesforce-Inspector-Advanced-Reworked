@@ -34,7 +34,8 @@ if (typeof browser === "undefined") {
           updateIcon: true,
           iFrameLocalStorage: {
             customFavicon: fav,
-            customFaviconSF: localStorage.getItem("customFaviconSF")
+            customFaviconSF: localStorage.getItem("customFaviconSF"),
+            bannerText: localStorage.getItem(e.data.sfHost + "_bannerText")
           }
         }, "*");
       } else if (e.data.updateLocalStorage) {
@@ -731,7 +732,7 @@ class App extends React.PureComponent {
             h("div", {className: "slds-page-header__col-title"},
               h("div", {className: "slds-media"},
                 h("div", {className: "slds-media__figure popup-media__figure"},
-                  h("span", {className: "popup-icon_container", title: "Salesforce Inspector Advanced"},
+                  h("span", {className: "popup-icon_container", title: "Salesforce Inspector Reworked"},
                     h("svg", {className: "slds-icon popup-header__icon", viewBox: "0 0 24 24"},
                       h("path", {
                         d: `
@@ -749,7 +750,7 @@ class App extends React.PureComponent {
                 h("div", {className: "slds-media__body"},
                   h("div", {className: "popup-header__name-title"},
                     h("h1", {},
-                      h("span", {className: "popup-header__title popup-title slds-truncate", title: "Salesforce Inspector Advanced"}, "Salesforce Inspector Advanced")
+                      h("span", {className: "popup-header__title popup-title slds-truncate", title: "Salesforce Inspector Reworked"}, "Salesforce Inspector Reworked")
                     )
                   )
                 )
