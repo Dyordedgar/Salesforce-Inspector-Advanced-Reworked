@@ -80,6 +80,44 @@ function updateFavIcon(iFrameLocalStorage) {
     }
   }
 }
+function showOrgBanner(iFrameLocalStorage) {
+  let bannerText = iFrameLocalStorage.bannerText;
+  let faviconColor = iFrameLocalStorage.customFavicon;
+  if (!bannerText || !faviconColor || !location.protocol.startsWith("http")) {
+    return;
+  }
+  if (document.getElementById("sfext-org-banner")) {
+    return;
+  }
+  let banner = document.createElement("div");
+  banner.id = "sfext-org-banner";
+  banner.style.backgroundColor = faviconColor;
+  banner.style.color = "white";
+  banner.style.textAlign = "center";
+  banner.style.padding = "4px 0";
+  banner.style.fontWeight = "bold";
+  banner.style.fontSize = "13px";
+  banner.style.zIndex = "10000";
+  banner.style.width = "100%";
+  banner.textContent = bannerText;
+
+  let sandboxBannerSelector = "div.slds-color__background_gray-1.slds-text-align_center.slds-size_full.slds-text-body_regular.oneSystemMessage";
+  let sandboxBanner = document.querySelector(sandboxBannerSelector);
+  if (sandboxBanner) {
+    sandboxBanner.after(banner);
+  } else {
+    waitForElement(sandboxBannerSelector, (element) => {
+      if (!document.getElementById("sfext-org-banner")) {
+        element.after(banner);
+      }
+    });
+    let header = document.querySelector("header.slds-global-header_container, .oneHeader");
+    if (header && !document.getElementById("sfext-org-banner")) {
+      header.after(banner);
+    }
+  }
+}
+
 function initButton(sfHost, inInspector) {
   let rootEl = document.createElement("div");
   rootEl.id = "insext";
@@ -411,6 +449,7 @@ function initButton(sfHost, inInspector) {
       }
       if (e.data.updateIcon){
         updateFavIcon(e.data.iFrameLocalStorage);
+        showOrgBanner(e.data.iFrameLocalStorage);
       }
     });
     popupWrapper.appendChild(popupEl);
@@ -522,7 +561,8 @@ function initButton(sfHost, inInspector) {
     function openPopup() {
       let activeContentElem = document.querySelector("div.windowViewMode-normal.active, section.oneConsoleTab div.windowViewMode-maximized.active.lafPageHost");
       let isFieldsPresent = activeContentElem ? !!activeContentElem.querySelector("record_flexipage-record-field > div, records-record-layout-item > div, div .forcePageBlockItemView") : false;
-      popupEl.contentWindow.postMessage({insextUpdateRecordId: true,
+      popupEl.contentWindow.postMessage({
+        insextUpdateRecordId: true,
         locationHref: location.href,
         isFieldsPresent
       }, allowedOrigin);
