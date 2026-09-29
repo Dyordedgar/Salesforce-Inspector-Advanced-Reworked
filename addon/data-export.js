@@ -426,7 +426,7 @@ class Model {
     this.didUpdate();
     return true;
   }
-  selectSuggestion() {
+  selectSuggestion({singleResult = false} = {}) {
     if (!this.autocompleteResults || !this.autocompleteResults.results || this.autocompleteResults.results.length == 0) {
       this.editorAutocompleteHandler({ctrlSpace: true});
       return;
@@ -453,7 +453,7 @@ class Model {
     }
     selStart = selEnd - searchTerm.length;
     let ar = this.autocompleteResults.results;
-    if (this.autocompleteResults.isField && this.activeSuggestion == -1) {
+    if (!singleResult && this.autocompleteResults.isField && this.activeSuggestion == -1) {
       ar = ar
         .filter(r => r.autocompleteType == "fieldName")
         .map((r, i, l) => this.autocompleteResults.contextPath + r.value + (i != l.length - 1 ? r.suffix : ""));
@@ -463,7 +463,7 @@ class Model {
       }
       return;
     }
-    if (this.autocompleteResults.isFieldValue && this.activeSuggestion == -1) {
+    if (!singleResult && this.autocompleteResults.isFieldValue && this.activeSuggestion == -1) {
       this.suggestFieldValues();
       return;
     }
@@ -1632,63 +1632,136 @@ class Model {
     return result;
   }
 
+  // Private tokenizer used ONLY by formatQuery. Kept separate from the shared
+  // nextWord so its broader token rules can never regress extractColumnFromQuery.
+  // It recognises whole-token forms (dates, datetimes, signed numbers, the $1
+  // list-parameter placeholder, date-literal params like LAST_N_DAYS:30, comments)
+  // and ends with a catch-all so an unknown character can never silently truncate
+  // the query the way the old shared tokenizer did.
+  formatNextWord(sentence, ctx) {
+    let regex = /^\s*(\/\/[^\n]*|\/\*[\s\S]*?(?:\*\/|$)|'(?:\\.|[^'\\])*'|\d{4}-\d{2}-\d{2}T[0-9:.+\-Z]+|\d{4}-\d{2}-\d{2}|\$\d+|-?\d+(?:\.\d+)?|\{[^}]*\}|[a-z0-9_.]+(?::\d+)?|,|\(|\)|<>|[<>!]=?|=|\S)/i;
+    if (!sentence) {
+      ctx.value = "";
+      ctx.pos++;
+      return;
+    }
+    let match = regex.exec(sentence.substring(ctx.pos));
+    if (match) {
+      ctx.value = match[1];
+      ctx.pos += match.index + match[0].length;
+      return;
+    }
+    ctx.value = "";
+    ctx.pos++;
+    return;
+  }
+
   formatQuery(query) {
     let ctx = {value: "", pos: 0};
-    let formatedQuery = "";
-    this.nextWord(query, ctx);
-    let fieldCount = 0;
+    let out = "";
     let indent = 0;
+    let fieldCount = 0; // only counts top-level SELECT fields for the 4-per-line wrap
+    let parenStack = []; // "sub" for subquery parens, "inline" for IN-lists / function args / grouping
+    let needSpace = false; // whether the next token should be preceded by a space
+    let prevValueLike = false; // whether the previous token was an identifier/value (function-name candidate)
+    let pad = n => "  ".repeat(Math.max(0, n));
+    // Keywords uppercased and placed on a new line at the current indent.
+    let newlineKeywords = new Set(["where", "having", "limit", "order", "group", "offset", "with", "find", "returning", "for"]);
+    // Keywords uppercased but kept on the current line.
+    let inlineKeywords = new Set(["by", "asc", "desc", "nulls", "first", "last", "not", "in", "like", "includes", "excludes", "using", "scope"]);
+    this.formatNextWord(query, ctx);
     while (ctx.value) {
-      switch (ctx.value.toLowerCase()){
-        case "select":
-          fieldCount = 0;
-          formatedQuery += "SELECT ";
+      let token = ctx.value;
+      let lower = token.toLowerCase();
+      let inInline = parenStack[parenStack.length - 1] == "inline";
+      if (lower == "select") {
+        out += "SELECT ";
+        indent++;
+        fieldCount = 0;
+        needSpace = false;
+        prevValueLike = false;
+      } else if (token == "(") {
+        // Peek the next token without consuming it: a following SELECT means a subquery.
+        let peek = {value: ctx.value, pos: ctx.pos};
+        this.formatNextWord(query, peek);
+        if (peek.value && peek.value.toLowerCase() == "select") {
+          parenStack.push("sub");
+          out += "\n" + pad(indent) + "(\n" + pad(indent + 1);
           indent++;
-          break;
-        case "(":
-          fieldCount = 0;
-          formatedQuery += "\n" + "  ".repeat(indent) + "(" + "\n" + "  ".repeat(indent + 1);
-          indent++;
-          break;
-        case ")":
-          fieldCount = 0;
+        } else {
+          parenStack.push("inline");
+          // Space before "(" after a keyword (IN, WHERE, =, ...) but not after a
+          // function name (count(Id), not count (Id)).
+          out += (needSpace && !prevValueLike ? " " : "") + "(";
+        }
+        needSpace = false;
+        fieldCount = 0;
+        prevValueLike = false;
+      } else if (token == ")") {
+        let kind = parenStack.pop();
+        if (kind == "sub") {
           indent--;
-          formatedQuery += "\n" + "  ".repeat(indent) + ")";
-          break;
-        case ",":
+          out += "\n" + pad(indent) + ")";
+        } else {
+          out += ")";
+        }
+        needSpace = true;
+        prevValueLike = true;
+      } else if (token == ",") {
+        if (inInline) {
+          // IN-lists and function args stay on one line, comma-space separated.
+          out += ", ";
+          needSpace = false;
+        } else {
           fieldCount++;
           if (fieldCount >= 4) {
-            formatedQuery += ",\n" + "  ".repeat(indent);
+            out += ",\n" + pad(indent);
             fieldCount = 0;
+            needSpace = false;
           } else {
-            formatedQuery += ",";
+            out += ",";
+            needSpace = true;
           }
-          break;
-        case "from":
-          indent--;
-          //TO force space after from where ...
-          fieldCount = 1;
-          formatedQuery += "\n" + "  ".repeat(indent) + ctx.value.toUpperCase();
-          break;
-        case "and":
-        case "or":
-        case "where":
-        case "limit":
-        case "order":
-        case "group":
-        case "find":
-        case "returning":
-        case "offset":
-        case "with":
-          formatedQuery += "\n" + "  ".repeat(indent) + ctx.value.toUpperCase();
-          break;
-        default:
-          formatedQuery += (fieldCount ? " " : "") + ctx.value;
-          break;
+        }
+        prevValueLike = false;
+      } else if (lower == "from") {
+        indent--;
+        out += "\n" + pad(indent) + "FROM";
+        needSpace = true;
+        fieldCount = 0;
+        prevValueLike = false;
+      } else if (newlineKeywords.has(lower)) {
+        out += "\n" + pad(indent) + token.toUpperCase();
+        needSpace = true;
+        prevValueLike = false;
+      } else if (lower == "and" || lower == "or") {
+        // Keep AND/OR inline inside a grouping paren so (x = 1 OR y = 2) stays on one line.
+        if (inInline) {
+          out += (needSpace ? " " : "") + token.toUpperCase();
+        } else {
+          out += "\n" + pad(indent) + token.toUpperCase();
+        }
+        needSpace = true;
+        prevValueLike = false;
+      } else if (inlineKeywords.has(lower)) {
+        out += (needSpace ? " " : "") + token.toUpperCase();
+        needSpace = true;
+        prevValueLike = false;
+      } else if (token.startsWith("//") || token.startsWith("/*")) {
+        // Preserve comments on their own line.
+        out += "\n" + pad(indent) + token + "\n" + pad(indent);
+        needSpace = false;
+        prevValueLike = false;
+      } else {
+        out += (needSpace ? " " : "") + token;
+        needSpace = true;
+        // Only identifiers can be function names; operators/numbers/strings are not.
+        prevValueLike = /^[a-z_]/i.test(token);
       }
-      this.nextWord(query, ctx);
+      this.formatNextWord(query, ctx);
     }
-    return formatedQuery;
+    // Drop any leading blank line (e.g. SOSL queries that begin with FIND).
+    return out.replace(/^\n+/, "");
   }
 
   async generateSOQLWithAI(description) {
@@ -2668,7 +2741,12 @@ class App extends React.Component {
     model.autocompleteResultBox = this.refs.autocompleteResultBox;
 
     addEventListener("keydown", e => {
-      if ((e.ctrlKey && e.key == "Enter") || e.key == "F5") {
+      if (e.ctrlKey && e.key == "Enter") {
+        e.preventDefault();
+        model.editor.value = model.formatQuery(model.editor.value);
+        model.doExport();
+        model.didUpdate();
+      } else if (e.key == "F5") {
         e.preventDefault();
         model.doExport();
         model.didUpdate();
